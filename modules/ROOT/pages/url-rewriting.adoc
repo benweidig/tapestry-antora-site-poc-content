@@ -1,1 +1,103 @@
 = URL Rewriting
+
+Prior to Tapestry 5.2.0, URL rewriting was facilitated by using https://github.com/apache/tapestry-5/blob/5.1.0.2/tapestry-core/src/main/java/org/apache/tapestry5/internal/services/URLRewriterService.java[org.apache.tapestry5.services.URLRewriter] service.
+
+This approach was deprecated in favor of javadoc:org.apache.tapestry5.services.linktransform.LinkTransformer[], which acts as a facade around javadoc:org.apache.tapestry5.services.linktransform.PageRenderLinkTransformer[] and javadoc:org.apache.tapestry5.services.linktransform.ComponentEventLinkTransformer[].
+
+Both services are implemented as chains to either modify page render and component event requests.
+Incoming requests are handled by the `decode...Request` method, and outgoing requests by `transform...Request`.
+
+== Configuration
+
+Both transformers are contributed to their respective interfaces:
+
+[source,java]
+----
+@Contribute(PageRenderLinkTransformer.class)
+public static void contributeMyPageRenderLinkTransformer(OrderedConfiguration<PageRenderLinkTransformer> configuration)
+{
+  configuration.addInstance("my-page-render-transformer",
+                            MyPageRenderLinkTransformer.class);
+}
+
+@Contribute(ComponentEventLinkTransformer.class)
+public static void contributeMyComponentEventLinkTransformer(OrderedConfiguration<ComponentEventLinkTransformer> configuration)
+{
+  configuration.addInstance("my-component-event-transformer",
+                            MyComponentEventLinkTransformer.class);
+}
+----
+
+== Usage Patterns
+
+All LinkTransformer follow the same pattern:
+
+*   Identify if relevant (e.g. path match)
+*   If it matches, return a modified value, otherwise `null`.
+
+The examples only show a `PageRenderLinkTransformer` but the implementation of a `ComponentEventLinkTransformer` is similar and follows the same pattern.
+
+Check out javadoc:org.apache.tapestry5.services.PageRenderRequestParameters[] and javadoc:org.apache.tapestry5.services.ComponentEventRequestParameters[] for the available information to make the decision to transform the request.
+
+=== Transforming Incoming URLs
+
+A classical example is rewriting incoming URLs after a page has moved:
+
+[source,java]
+----
+public class MovedPagesLinkTransformer implements PageRenderLinkTransformer {
+
+  public PageRenderRequestParameters decodePageRenderRequest(Request request) {
+    String path = request.getPath();
+
+    if (path.startsWith("/oldpage")) {
+      // Create new PageRenderRequestParameters to the correct page
+      return new PageRenderRequestParameters(NewPage.class.getSimpleName(),
+                                             new EmptyEventContext(),
+                                             false);
+    }
+
+    return null;
+  }
+
+  public Link transformPageRenderLink(Link defaultLink,
+                                      PageRenderRequestParameters parameters) {
+    // No-op
+    return null;
+  }
+}
+----
+
+=== Transforming Outgoing URLs
+
+The previous example rewrites URLs to a new location, so for example users with bookmarks won't be hit with a 404.
+
+However, for creating links, we want to use the new URL, even if the old page is rendered:
+
+[source,java]
+----
+public class MovedPagesLinkTransformer implements PageRenderLinkTransformer {
+
+  @Inject
+  private PageRenderLinkSource pageRenderLinkSource;
+ 
+  public PageRenderRequestParameters decodePageRenderRequest(Request request) {
+    // ...
+  }
+
+  public Link transformPageRenderLink(Link defaultLink,
+                                      PageRenderRequestParameters parameters) {
+    if (defaultLink.getBasePath().contains("/oldpage")) {
+      return this.pageRenderLinkSource.createPageRenderLink(NewPage.class);
+    }
+
+    return defaultLink;
+  }
+}
+
+
+----
+
+== Further Reading
+
+Check out Igor Drobiazko's https://web.archive.org/web/20150906154302/http://blog.tapestry5.de/index.php/2010/09/06/new-url-rewriting-api/[excellent blog] post for more information.
